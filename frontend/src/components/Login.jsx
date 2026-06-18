@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { socket } from '../socket';
+import { BACKEND_URL } from '../config';
 
 export default function Login({ onLogin }) {
   const [username, setUsername] = useState('');
@@ -22,7 +23,7 @@ export default function Login({ onLogin }) {
     const timeoutId = setTimeout(async () => {
       setIsChecking(true);
       try {
-        const res = await fetch(`http://localhost:4000/api/auth/check-username?username=${encodeURIComponent(username)}`);
+        const res = await fetch(`${BACKEND_URL}/api/auth/check-username?username=${encodeURIComponent(username)}`);
         const data = await res.json();
         setIsAvailable(data.available);
         if (!data.available) {
@@ -56,7 +57,7 @@ export default function Login({ onLogin }) {
     setIsLoading(true);
 
     try {
-      const loginRes = await fetch('http://localhost:4000/api/auth/login', {
+      const loginRes = await fetch(`${BACKEND_URL}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, color: activeTheme.hex })

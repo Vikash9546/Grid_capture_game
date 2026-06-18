@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useStore } from '../store/useStore';
+import { BACKEND_URL } from '../config';
 
 export default function Leaderboard() {
   const { isLeaderboardOpen, toggleLeaderboard } = useStore();
@@ -12,7 +13,7 @@ export default function Leaderboard() {
     
     const fetchLeaderboard = async () => {
       try {
-        const res = await fetch('http://localhost:4000/api/leaderboard');
+        const res = await fetch(`${BACKEND_URL}/api/leaderboard`);
         const json = await res.json();
         setData(json);
       } catch (err) {

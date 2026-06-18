@@ -6,6 +6,7 @@ import Sidebar from './components/Sidebar';
 import Map from './components/Map';
 import Login from './components/Login';
 import Leaderboard from './components/Leaderboard';
+import { BACKEND_URL } from './config';
 
 function App() {
   const { user, setUser, setTiles, updateTile, setLeaderboard, setOnlineUsersCount, addLog } = useStore();
@@ -27,12 +28,12 @@ function App() {
     }
 
     if (user) {
-      fetch('http://localhost:4000/api/tiles')
+      fetch(`${BACKEND_URL}/api/tiles`)
         .then(res => res.json())
         .then(data => setTiles(data))
         .catch(console.error);
         
-      fetch('http://localhost:4000/api/leaderboard')
+      fetch(`${BACKEND_URL}/api/leaderboard`)
         .then(res => res.json())
         .then(data => setLeaderboard(data))
         .catch(console.error);
@@ -45,7 +46,7 @@ function App() {
       });
 
       socket.on('leaderboard_updated', () => {
-        fetch('http://localhost:4000/api/leaderboard')
+        fetch(`${BACKEND_URL}/api/leaderboard`)
           .then(res => res.json())
           .then(data => setLeaderboard(data));
       });
