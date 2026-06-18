@@ -1,33 +1,33 @@
 import React from 'react';
 import { useStore } from '../store/useStore';
-import { Users, Map as MapIcon, Bell } from 'lucide-react';
 
 export default function Header() {
   const user = useStore((state) => state.user);
-  const onlineUsersCount = useStore((state) => state.onlineUsersCount);
 
   return (
-    <header className="h-16 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-6 shadow-sm z-10 relative">
-      <div className="flex items-center space-x-3">
-        <MapIcon className="w-6 h-6 text-blue-500" />
-        <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">
-          GridCapture
+    <header className="h-[60px] bg-[#101415] border-b border-[#264191]/50 flex items-center justify-between px-6 z-20 shrink-0">
+      <div className="flex items-center space-x-12 h-full">
+        <h1 className="text-[22px] font-bold text-[#d4e3ff] tracking-tight font-sans">
+          TERRITORY
         </h1>
+
+        <nav className="flex items-center space-x-8 h-full">
+          <a href="#" className="font-mono text-[12px] font-bold text-[#d4e3ff] tracking-[0.05em] uppercase h-full flex items-center border-b-[3px] border-[#60a5fa] pt-[3px]">MAP</a>
+          <a href="#" className="font-mono text-[12px] font-bold text-[#8b919d] tracking-[0.05em] uppercase hover:text-[#d4e3ff] transition-colors h-full flex items-center">RANKINGS</a>
+          <a href="#" className="font-mono text-[12px] font-bold text-[#8b919d] tracking-[0.05em] uppercase hover:text-[#d4e3ff] transition-colors h-full flex items-center">INTEL</a>
+        </nav>
       </div>
 
-      <div className="flex items-center space-x-6">
-        <div className="flex items-center text-slate-300 space-x-2">
-          <Users className="w-5 h-5 text-emerald-400" />
-          <span className="font-medium">{onlineUsersCount} Online</span>
-        </div>
-        
+      <div className="flex items-center space-x-6 text-[#8b919d]">
+        <button className="hover:text-[#60a5fa] transition-colors">
+          <span className="material-symbols-outlined text-[20px]">notifications</span>
+        </button>
+        <button className="hover:text-[#60a5fa] transition-colors">
+          <span className="material-symbols-outlined text-[20px]">settings</span>
+        </button>
         {user && (
-          <div className="flex items-center space-x-3 pl-6 border-l border-slate-700">
-            <div 
-              className="w-8 h-8 rounded-full shadow-inner border-2 border-slate-600"
-              style={{ backgroundColor: user.color }}
-            />
-            <span className="font-medium text-slate-200">{user.username}</span>
+          <div className="w-8 h-8 bg-[#191c1e] border border-[#60a5fa]/40 flex items-center justify-center overflow-hidden">
+             <img src="https://api.dicebear.com/7.x/bottts/svg?seed=stark&backgroundColor=101415" alt="Avatar" className="w-full h-full object-cover opacity-80" />
           </div>
         )}
       </div>
