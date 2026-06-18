@@ -1,62 +1,55 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { useStore } from '../store/useStore';
-import { Trophy, Shield, Zap } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { socket } from '../socket';
 
 export default function Sidebar() {
-  const { user, leaderboard } = useStore();
+  const { user, toggleLeaderboard, setUser } = useStore();
+
+  const handleLogout = () => {
+    localStorage.removeItem('territory_user');
+    socket.disconnect();
+    setUser(null);
+  };
 
   return (
-    <div className="w-80 bg-slate-900 border-r border-slate-800 flex flex-col h-full text-slate-300">
-      <div className="p-6 border-b border-slate-800">
-        <h2 className="text-sm uppercase tracking-wider font-semibold text-slate-500 mb-4">Your Stats</h2>
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <Trophy className="w-4 h-4 text-yellow-500" />
-              <span>Score</span>
-            </div>
-            <span className="font-bold text-white">{user?.score || 0}</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <Shield className="w-4 h-4 text-blue-500" />
-              <span>Territory</span>
-            </div>
-            <span className="font-bold text-white">0</span>
-          </div>
-        </div>
+    <div className="w-[260px] bg-[#101415] flex flex-col h-full shrink-0 border-r border-[#264191]/30">
+      
+      {/* Commander Profile */}
+      <div className="px-6 py-8">
+        <h2 className="font-mono text-[10px] font-bold tracking-[0.1em] text-[#8b919d] uppercase mb-1">COMMANDER</h2>
+        <h1 className="font-sans text-[20px] leading-[1.2] font-bold text-[#d4e3ff] uppercase tracking-wide truncate">
+          CDR. {user?.username || 'STARK'}
+        </h1>
+        <p className="font-mono text-[10px] font-bold text-[#e0e3e5] tracking-[0.1em] uppercase mt-2">
+          LVL {Math.max(1, Math.floor((user?.score || 0) / 100))} OPERATOR
+        </p>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6">
-        <h2 className="text-sm uppercase tracking-wider font-semibold text-slate-500 mb-4">Leaderboard</h2>
-        <div className="space-y-3">
-          {leaderboard.map((player, index) => (
-            <motion.div 
-              key={player.id}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              className="flex items-center justify-between p-3 rounded-lg bg-slate-800/50"
-            >
-              <div className="flex items-center space-x-3">
-                <span className="text-slate-500 font-medium w-4">{index + 1}.</span>
-                <div 
-                  className="w-4 h-4 rounded-full"
-                  style={{ backgroundColor: player.color }}
-                />
-                <span className="font-medium text-slate-200">{player.username}</span>
-              </div>
-              <span className="font-bold text-blue-400">{player.score}</span>
-            </motion.div>
-          ))}
-          
-          {leaderboard.length === 0 && (
-            <div className="text-center text-slate-500 text-sm italic">
-              No players yet
-            </div>
-          )}
-        </div>
+      {/* Navigation Menu */}
+      <nav className="flex-1 flex flex-col mt-2">
+        <a href="#" className="flex items-center px-6 py-4 bg-[#264191]/30 text-[#e0e3e5] border-l-[3px] border-[#60a5fa]">
+          <span className="material-symbols-outlined text-[18px] mr-4 opacity-80">map</span>
+          <span className="font-mono text-[11px] font-bold tracking-[0.15em] uppercase">MAP OVERVIEW</span>
+        </a>
+        
+        <button onClick={toggleLeaderboard} className="flex w-full items-center px-6 py-4 text-[#8b919d] hover:text-[#e0e3e5] transition-colors border-l-[3px] border-transparent hover:bg-[#191c1e]">
+          <span className="material-symbols-outlined text-[18px] mr-4 opacity-80">leaderboard</span>
+          <span className="font-mono text-[11px] font-bold tracking-[0.15em] uppercase">LEADERBOARD</span>
+        </button>
+
+      </nav>
+
+      {/* Bottom Section */}
+      <div className="p-6">
+        <button 
+          onClick={handleLogout}
+          className="flex items-center space-x-3 w-full text-[#8b919d] hover:text-[#ef4444] transition-colors font-mono"
+        >
+          <span className="material-symbols-outlined text-[16px]">logout</span>
+          <span className="text-[10px] font-bold tracking-[0.15em] uppercase">LOGOUT</span>
+        </button>
       </div>
+
     </div>
   );
 }
