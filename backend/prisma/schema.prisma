@@ -1,0 +1,50 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String           @id @default(uuid()) @db.Uuid
+  username       String           @unique
+  avatar         String?
+  color          String
+  score          Int              @default(0)
+  createdAt      DateTime         @default(now()) @map("created_at")
+  tiles          Tile[]
+  capturedTiles  CaptureHistory[] @relation("NewOwner")
+  lostTiles      CaptureHistory[] @relation("PreviousOwner")
+
+  @@map("users")
+}
+
+model Tile {
+  id         String           @id @default(uuid()) @db.Uuid
+  x          Int
+  y          Int
+  ownerId    String?          @map("owner_id") @db.Uuid
+  capturedAt DateTime?        @map("captured_at")
+  version    Int              @default(1)
+  owner      User?            @relation(fields: [ownerId], references: [id])
+  history    CaptureHistory[]
+
+  @@unique([x, y])
+  @@map("tiles")
+}
+
+model CaptureHistory {
+  id              String   @id @default(uuid()) @db.Uuid
+  tileId          String   @map("tile_id") @db.Uuid
+  previousOwnerId String?  @map("previous_owner_id") @db.Uuid
+  newOwnerId      String   @map("new_owner_id") @db.Uuid
+  capturedAt      DateTime @default(now()) @map("captured_at")
+
+  tile          Tile  @relation(fields: [tileId], references: [id])
+  previousOwner User? @relation("PreviousOwner", fields: [previousOwnerId], references: [id])
+  newOwner      User  @relation("NewOwner", fields: [newOwnerId], references: [id])
+
+  @@map("capture_history")
+}
