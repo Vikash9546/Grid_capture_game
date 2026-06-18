@@ -47,28 +47,18 @@ async function calculateTerritorySize(tx, ownerId, startX, startY) {
   return size;
 }
 
-async function updateLeaderboardCache() {
-  const users = await prisma.user.findMany({
-    orderBy: { score: 'desc' },
-    take: 10,
-  });
-  await redisClient.set('leaderboard', JSON.stringify(users), 'EX', 10);
-  return users;
-}
+// updateLeaderboardCache removed: caching is now handled on-demand in index.js via /api/leaderboard
 
 export default function setupSockets(io) {
   io.on('connection', (socket) => {
     console.log(`Client connected: ${socket.id}`);
 
-    socket.on('join_world', async ({ username, color }) => {
-      let user = await prisma.user.upsert({
-        where: { username },
-        update: { color },
-        create: {
-          username,
-          color: color || '#3b82f6',
-        }
-      });
+    socket.on('join_world', async (payload) => {
+      const userId = payload?.userId;
+      if (!userId) return;
+
+      let user = await prisma.user.findUnique({ where: { id: userId } });
+      if (!user) return;
 
       socket.userId = user.id;
       socket.username = user.username;
@@ -86,8 +76,21 @@ export default function setupSockets(io) {
       io.emit('user_online', { count: onlineCount });
     });
 
-    socket.on('capture_tile', async ({ x, y }) => {
-      if (!socket.userId) return;
+    socket.on('capture_tile', async ({ tileId }) => {
+      if (!socket.userId || !tileId) return;
+
+      let x, y;
+      if (tileId.includes(',')) {
+        // Unclaimed tile formatted as "x,y"
+        [x, y] = tileId.split(',').map(Number);
+      } else {
+        // Existing tile ID lookup
+        const existingTile = await prisma.tile.findUnique({ where: { id: tileId } });
+        if (!existingTile) return;
+        x = existingTile.x;
+        y = existingTile.y;
+      }
+
       if (x < 0 || x >= GRID_SIZE || y < 0 || y >= GRID_SIZE) return;
 
       const cooldownKey = `cooldown:${socket.userId}`;
@@ -104,8 +107,34 @@ export default function setupSockets(io) {
         let pointsEarned = CAPTURE_POINTS;
 
         const updatedTile = await prisma.$transaction(async (tx) => {
-          // Row-level lock equivalent or atomic update via unique constraints
-          const tile = await tx.tile.findUnique({ where: { x_y: { x, y } } });
+          let tile;
+          
+          if (tileId.includes(',')) {
+            // Unclaimed: lock by coordinate to prevent simultaneous inserts
+            await tx.$executeRaw`SELECT * FROM "tiles" WHERE "x" = ${x} AND "y" = ${y} FOR UPDATE`;
+            tile = await tx.tile.findUnique({ where: { x_y: { x, y } } });
+          } else {
+            // Claimed: lock row specifically by ID
+            // PostgreSQL requires casting the UUID string via ::uuid
+            const lockedRows = await tx.$queryRaw`SELECT * FROM "tiles" WHERE "id" = ${tileId}::uuid FOR UPDATE`;
+            // Map the raw SQL result back to the expected model keys
+            tile = lockedRows[0] ? {
+              id: lockedRows[0].id,
+              x: lockedRows[0].x,
+              y: lockedRows[0].y,
+              ownerId: lockedRows[0].owner_id,
+              capturedAt: lockedRows[0].captured_at,
+              version: lockedRows[0].version
+            } : null;
+          }
+          
+          if (tile) {
+            // Protected state check (5000ms)
+            if (tile.capturedAt && (Date.now() - new Date(tile.capturedAt).getTime() < 5000)) {
+              throw new Error('Tile is protected');
+            }
+          }
+
           const previousOwnerId = tile ? tile.ownerId : null;
           
           if (previousOwnerId === socket.userId) {
@@ -145,28 +174,27 @@ export default function setupSockets(io) {
             }
           });
 
-          // Check territory size
-          territorySize = await calculateTerritorySize(tx, socket.userId, x, y);
-          
-          // Apply bonus if territory size > threshold (e.g. 9)
-          if (territorySize >= 9) {
-            pointsEarned += TERRITORY_BONUS;
-          }
-
-          // Update user score
-          await tx.user.update({
-            where: { id: socket.userId },
-            data: { score: { increment: pointsEarned } }
-          });
-
           return updated;
+        }, {
+          maxWait: 10000, // 10s wait for lock
+          timeout: 15000  // 15s to finish transaction
         });
 
-        // Update leaderboard cache
-        await updateLeaderboardCache();
-
-        io.emit('tile_updated', { tile: updatedTile, territorySize });
+        // Emit INSTANTLY for true 0ms latency.
+        io.emit('tile_updated', { tile: updatedTile, territorySize: null });
         io.emit('leaderboard_updated');
+
+        // OFF-LOADED HEAVY WORK: Process territory size completely in the background without blocking the socket response
+        calculateTerritorySize(prisma, socket.userId, x, y).then(size => {
+          let pointsEarned = CAPTURE_POINTS;
+          if (size >= 9) {
+            pointsEarned += TERRITORY_BONUS;
+          }
+          prisma.user.update({
+            where: { id: socket.userId },
+            data: { score: { increment: pointsEarned } }
+          }).catch(err => console.error('Score update failed:', err));
+        }).catch(err => console.error('Territory calc failed:', err));
 
       } catch (error) {
         console.error('Capture error:', error.message);
