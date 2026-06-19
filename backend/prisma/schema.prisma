@@ -9,10 +9,13 @@ datasource db {
 
 model User {
   id             String           @id @default(uuid()) @db.Uuid
+  email          String?          @unique
+  password       String?
   username       String           @unique
   avatar         String?
   color          String
   score          Int              @default(0)
+  territoryCount Int              @default(0)
   createdAt      DateTime         @default(now()) @map("created_at")
   tiles          Tile[]
   capturedTiles  CaptureHistory[] @relation("NewOwner")
@@ -32,6 +35,9 @@ model Tile {
   history    CaptureHistory[]
 
   @@unique([x, y])
+  @@index([ownerId])
+  @@index([capturedAt])
+  @@index([x, y])
   @@map("tiles")
 }
 
@@ -46,5 +52,7 @@ model CaptureHistory {
   previousOwner User? @relation("PreviousOwner", fields: [previousOwnerId], references: [id])
   newOwner      User  @relation("NewOwner", fields: [newOwnerId], references: [id])
 
+  @@index([newOwnerId])
+  @@index([capturedAt])
   @@map("capture_history")
 }
