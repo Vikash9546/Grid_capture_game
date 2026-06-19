@@ -55,7 +55,7 @@ export default function setupSockets(io) {
 
     socket.on('join_world', async (payload) => {
       const userId = payload?.userId;
-      if (!userId) return;
+      if (!userId || userId === 'guest') return;
 
       try {
         let user = await prisma.user.findUnique({ where: { id: userId } });
