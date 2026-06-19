@@ -7,7 +7,7 @@ const TILE_SIZE = 30;
 
 export default function Map() {
   const canvasRef = useRef(null);
-  const { tiles, user, updateTile, logs } = useStore();
+  const { tiles, user, updateTile, addLog } = useStore();
   const [offset, setOffset] = useState({ x: -TILE_SIZE * 20, y: -TILE_SIZE * 20 });
   const [scale, setScale] = useState(1);
   const [isDragging, setIsDragging] = useState(false);
@@ -193,6 +193,11 @@ export default function Map() {
   const handleClick = (e) => {
     if (isDragging) return;
     if (hoverTile && user) {
+      if (user.isGuest) {
+        addLog('ACCESS DENIED: GUEST OBSERVERS CANNOT CAPTURE TERRITORY');
+        return;
+      }
+
       const tile = tiles[`${hoverTile.x},${hoverTile.y}`];
       if (tile && tile.capturedAt) {
         const timeSinceCapture = Date.now() - new Date(tile.capturedAt).getTime();

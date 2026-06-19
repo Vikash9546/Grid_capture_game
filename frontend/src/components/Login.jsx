@@ -83,6 +83,15 @@ export default function Login({ onLogin }) {
     }
   };
 
+  const handleGuestLogin = (e) => {
+    e.preventDefault();
+    const guestUser = { id: 'guest', username: 'GUEST_OBSERVER', color: '#8b919d', isGuest: true };
+    socket.connect();
+    setUser(guestUser);
+    localStorage.setItem('territory_user', JSON.stringify(guestUser));
+    onLogin();
+  };
+
   return (
     <div className="bg-[#101415] text-[#e0e3e5] min-h-screen overflow-hidden flex flex-col items-center justify-center relative font-sans selection:bg-[#60a5fa] selection:text-[#003a6b]">
       
@@ -213,9 +222,13 @@ export default function Login({ onLogin }) {
                 {isLoading ? 'INITIALIZING...' : isChecking ? 'VERIFYING...' : 'INITIALIZE UPLINK'}
                 <span className="material-symbols-outlined text-[18px] group-hover:translate-x-1 transition-transform">login</span>
               </button>
-              <a className="font-mono text-[10px] leading-[1] tracking-[0.1em] font-bold text-[#c1c7d3] text-center hover:text-[#60a5fa] transition-colors pt-2" href="#">
+              <button 
+                type="button" 
+                onClick={handleGuestLogin}
+                className="font-mono text-[10px] leading-[1] tracking-[0.1em] font-bold text-[#c1c7d3] text-center hover:text-[#60a5fa] transition-colors pt-2"
+              >
                 GUEST_VIEW_ONLY
-              </a>
+              </button>
             </div>
           </form>
 
