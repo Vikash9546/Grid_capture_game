@@ -3,75 +3,121 @@
 An enterprise-grade, real-time MMO territory capture game where players compete globally to conquer grid tiles, expand territories, and dominate the leaderboard.
 
 ## Overview
-Players authenticate into the Commander dashboard and are dropped into a shared, persistent 100x100 global grid. Players can click unowned or enemy-owned tiles to capture them, painting them in their unique faction color. The game features live socket-driven operational logs, real-time leaderboards, and an optimistic rendering engine for 0ms perceived latency.
+Players authenticate into the Commander dashboard and are dropped into a shared, persistent 100x100 global grid. Players can click unowned or enemy-owned tiles to capture them, painting them in their unique faction color. The game features live socket-driven operational logs, an $O(1)$ real-time Redis leaderboard, and an optimistic rendering engine for 0ms perceived latency.
 
-## Architecture & Data Flow
+---
 
-The system is built on a highly concurrent, horizontally scalable architecture utilizing Node.js, Socket.io, PostgreSQL, and Redis.
+## 🏛 System Architecture & Design
+
+The V2 system is built on a highly concurrent, horizontally scalable architecture utilizing Node.js, Socket.io, PostgreSQL, and Redis. It enforces a strict Controller-Service-Repository pattern for enterprise maintainability.
 
 ```mermaid
-sequenceDiagram
-    participant Client
-    participant Socket Server
-    participant Redis Cache
-    participant PostgreSQL DB
-    
-    Client->>Socket Server: Emits 'capture_tile' (x, y)
-    
-    rect rgb(20, 30, 40)
-        Note right of Socket Server: Primary Transaction
-        Socket Server->>Redis Cache: Set 3s Cooldown (EX 3)
-        Socket Server->>PostgreSQL DB: BEGIN Transaction
-        Socket Server->>PostgreSQL DB: SELECT FOR UPDATE (Row Lock)
-        Socket Server->>PostgreSQL DB: UPDATE / CREATE Tile
-        Socket Server->>PostgreSQL DB: COMMIT
+flowchart TD
+    subgraph Client [Client Tier]
+        UI[React UI + Zustand State]
+        Canvas[HTML5 Canvas Map]
+        SocketClient[Socket.IO Client]
     end
-    
-    Socket Server-->>Client: Emits 'tile_updated' (Instant Feedback)
-    
-    rect rgb(20, 40, 30)
-        Note right of Socket Server: Background Processing
-        Socket Server->>PostgreSQL DB: Async BFS Territory Calculation
-        Socket Server->>PostgreSQL DB: Async User Score Increment (+10 / +50)
+
+    subgraph Server [Application Tier - Node.js]
+        API[Express REST API]
+        SocketServer[Socket.IO Server]
+        Auth[Auth Controller]
+        Tile[Tile Service]
+        Leaderboard[Leaderboard Service]
     end
-    
-    loop Every 3 Seconds
-        Client->>Socket Server: GET /api/leaderboard
-        Socket Server->>Redis Cache: Check 'leaderboard:snapshot'
-        alt Cache Hit
-            Redis Cache-->>Socket Server: Return JSON string
-        else Cache Miss
-            Socket Server->>PostgreSQL DB: Heavy GroupBy Aggregations
-            PostgreSQL DB-->>Socket Server: Return Data
-            Socket Server->>Redis Cache: Cache Snapshot (EX 3)
-        end
-        Socket Server-->>Client: Return Leaderboard Data
+
+    subgraph Data [Data Tier]
+        PG[(PostgreSQL Database)]
+        Redis[(Redis Cache & Pub/Sub)]
     end
+
+    UI --> |HTTP POST /auth| API
+    UI --> |HTTP GET /tiles?viewport| API
+    Canvas <--> |WebSocket Events| SocketServer
+    SocketClient <--> |WebSocket Events| SocketServer
+
+    API --> Auth
+    API --> Leaderboard
+    
+    SocketServer --> Tile
+    
+    Auth --> |Bcrypt + JWT| PG
+    Tile --> |Prisma ORM: Transactions| PG
+    Tile --> |ZINCRBY O1 Updates| Redis
+    Leaderboard --> |ZREVRANGE| Redis
+    SocketServer --> |Adapter Pub/Sub| Redis
 ```
 
-## Engineering Trade-offs
+---
 
-To guarantee absolute data integrity under massive concurrent load (e.g., 50 players clicking the exact same tile simultaneously) while maintaining extreme performance, several critical architectural trade-offs were made:
+## 🗄 Entity Relationship (ER) Diagram
 
-### 1. Row-Level Locks (`SELECT FOR UPDATE`) vs. Redis Mutex
-**The Decision:** We utilized raw SQL `SELECT ... FOR UPDATE` directly inside Prisma transactions to lock specific tile coordinates. 
-**The Trade-off:** While a Redis Distributed Lock might resolve a few milliseconds faster, relying on PostgreSQL row-level locks guarantees ACID compliance and perfectly serialized transactions, completely eliminating race conditions and "double captures" at the database level.
+The persistent data model relies on a highly normalized PostgreSQL relational database. 
 
-### 2. Asynchronous Territory BFS vs. Synchronous Integrity
-**The Decision:** Capturing a tile awards base points (+10), but capturing a contiguous territory of 9+ tiles awards a massive bonus (+50). The Breadth-First-Search (BFS) required to calculate this territory size is expensive.
-**The Trade-off:** Instead of forcing the player to wait for the BFS algorithm to finish before confirming their capture, we completely removed the BFS from the critical database transaction. The server instantly emits the `tile_updated` socket event for 0ms perceived UI latency, and processes the heavy territory algorithm entirely in the background. The user's score achieves "eventual consistency" a few milliseconds later.
+```mermaid
+erDiagram
+    users ||--o{ tiles : "owns"
+    users ||--o{ capture_history : "newOwner"
+    users ||--o{ capture_history : "previousOwner"
+    tiles ||--o{ capture_history : "tracks"
 
-### 3. Real-Time Leaderboard Polling vs. Event-Driven Broadcasting
-**The Decision:** The leaderboard requires massive `GROUP BY` operations across the `tiles` and `capture_history` tables.
-**The Trade-off:** Broadcasting a newly recalculated leaderboard over WebSockets on every single tile capture would instantly crash the database under heavy load. Instead, the frontend relies on a 3-second polling mechanism (`setInterval`) hitting an `/api/leaderboard` endpoint protected by a 3-second Redis Cache (`EX 3`). The trade-off is a maximum of 3.0s staleness on the leaderboard, in exchange for a 99.9% reduction in database load.
+    users {
+        Uuid id PK
+        String email UK
+        String password "Hashed"
+        String username UK
+        String color
+        Int score
+        Int territoryCount
+        DateTime createdAt
+    }
 
-### 4. Socket.io Redis Adapter vs. In-Memory PubSub
-**The Decision:** We implemented `@socket.io/redis-adapter` into the backend cluster.
-**The Trade-off:** It adds a slight infrastructure dependency (requiring both Pub and Sub Redis connections), but it inherently solves WebSocket horizontal scaling. If the game goes viral and requires 5 Node.js servers behind a Load Balancer, a capture on Server A is instantly broadcasted to players connected to Server B via Redis Pub/Sub.
+    tiles {
+        String id PK
+        Int x
+        Int y
+        Uuid ownerId FK
+        DateTime capturedAt
+        Int version
+    }
 
-## Tech Stack
+    capture_history {
+        String id PK
+        String tileId FK
+        Uuid previousOwnerId FK
+        Uuid newOwnerId FK
+        DateTime timestamp
+    }
+```
+
+---
+
+## 🚀 Data Flow & Engineering Trade-offs
+
+To guarantee absolute data integrity under massive concurrent load (e.g., 50 players clicking the exact same tile simultaneously) while maintaining extreme performance, several critical architectural implementations were built.
+
+### 1. Viewport-Based Rendering & Fetching
+Instead of loading the massive 10,000+ tile array synchronously, the client sends `startX`, `startY`, `endX`, and `endY` bounds. The backend executes bounded database queries to fetch only what is strictly visible on the screen.
+
+### 2. $O(1)$ Real-Time Redis Leaderboard
+Calculating the global leaderboard using massive PostgreSQL `GROUP BY` operations is notoriously slow. 
+**The V2 Solution:** Every time a tile is captured, the backend fires an asynchronous `ZINCRBY leaderboard +10 <userId>` command directly into Redis. The leaderboard is mathematically updated in $O(1)$ time complexity, completely bypassing the relational database and enabling true sub-millisecond, real-time leaderboard polling without crashing the server.
+
+### 3. Asynchronous Territory BFS vs. Synchronous Integrity
+Capturing a contiguous territory of tiles triggers a massive Breadth-First-Search (BFS) algorithm to calculate contiguous area size.
+**The Trade-off:** Instead of forcing the player to wait for the BFS algorithm to finish before confirming their capture, we completely removed the BFS from the critical database transaction. The server instantly emits the `tile_updated` socket event for 0ms perceived UI latency, and processes the heavy territory algorithm entirely in the background. 
+
+### 4. Row-Level Locks (`SELECT FOR UPDATE`)
+We utilize raw SQL `SELECT ... FOR UPDATE` directly inside Prisma transactions to lock specific tile coordinates. While a Redis Distributed Lock might resolve a few milliseconds faster, relying on PostgreSQL row-level locks guarantees ACID compliance and perfectly serialized transactions, completely eliminating race conditions and "double captures" at the database level.
+
+### 5. Secure Email/Password Authentication
+The system uses `bcryptjs` for cryptographic password hashing and signs stateless JSON Web Tokens (`JWT`) to authorize Socket.io connections before establishing a handshake, effectively mitigating unauthorized packet spoofing.
+
+---
+
+## 💻 Tech Stack
 - **Frontend:** React, Vite, TailwindCSS, Zustand, HTML5 Canvas API
-- **Backend:** Node.js, Express, Socket.io
+- **Backend:** Node.js, Express, Socket.io, JWT, bcrypt
 - **Database:** PostgreSQL (Prisma ORM)
 - **Caching & Pub/Sub:** Redis
-- **Infrastructure Ready:** Vercel (Frontend), Render (Backend), Railway (PostgreSQL)
