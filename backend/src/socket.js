@@ -57,11 +57,12 @@ export default function setupSockets(io) {
       const userId = payload?.userId;
       if (!userId) return;
 
-      let user = await prisma.user.findUnique({ where: { id: userId } });
-      if (!user) return;
-
-      socket.userId = user.id;
-      socket.username = user.username;
+      try {
+        let user = await prisma.user.findUnique({ where: { id: userId } });
+        if (!user) return;
+        
+        socket.userId = user.id;
+        socket.username = user.username;
 
       // Track online user
       await redisClient.hset('online_users', socket.id, JSON.stringify({
@@ -71,9 +72,12 @@ export default function setupSockets(io) {
         socketId: socket.id
       }));
 
-      // Broadcast online count
-      const onlineCount = await redisClient.hlen('online_users');
-      io.emit('user_online', { count: onlineCount });
+        // Broadcast online count
+        const onlineCount = await redisClient.hlen('online_users');
+        io.emit('user_online', { count: onlineCount });
+      } catch (error) {
+        console.error('Join world error:', error.message);
+      }
     });
 
     socket.on('capture_tile', async ({ tileId }) => {
