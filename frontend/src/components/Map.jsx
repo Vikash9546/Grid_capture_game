@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useStore } from '../store/useStore';
 import { socket } from '../socket';
 
+import { BACKEND_URL } from '../config';
+
 const GRID_SIZE = 100;
 const TILE_SIZE = 30;
 
@@ -13,6 +15,68 @@ export default function Map() {
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [hoverTile, setHoverTile] = useState(null);
+  const [viewportSize, setViewportSize] = useState({ w: window.innerWidth, h: window.innerHeight });
+
+  useEffect(() => {
+    const handleResize = () => setViewportSize({ w: window.innerWidth, h: window.innerHeight });
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const minimapRef = useRef(null);
+
+  const handleMinimapInteract = (e) => {
+    if (!minimapRef.current) return;
+    const rect = minimapRef.current.getBoundingClientRect();
+    let mx = e.clientX - rect.left;
+    let my = e.clientY - rect.top;
+    
+    mx = Math.max(0, Math.min(128, mx));
+    my = Math.max(0, Math.min(128, my));
+
+    const mapWidth = GRID_SIZE * TILE_SIZE;
+    const mapX = (mx / 128) * mapWidth;
+    const mapY = (my / 128) * mapWidth;
+
+    setOffset({
+      x: -(mapX * scale) + window.innerWidth / 2,
+      y: -(mapY * scale) + window.innerHeight / 2
+    });
+  };
+
+  const onMinimapPointerDown = (e) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    handleMinimapInteract(e);
+  };
+
+  const onMinimapPointerMove = (e) => {
+    if (e.buttons === 1) {
+      handleMinimapInteract(e);
+    }
+  };
+
+  // Debounced Viewport Fetch
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const startX = Math.max(0, Math.floor(-offset.x / (TILE_SIZE * scale)));
+      const startY = Math.max(0, Math.floor(-offset.y / (TILE_SIZE * scale)));
+      const endX = Math.min(GRID_SIZE, Math.ceil((canvas.width - offset.x) / (TILE_SIZE * scale)));
+      const endY = Math.min(GRID_SIZE, Math.ceil((canvas.height - offset.y) / (TILE_SIZE * scale)));
+
+      fetch(`${BACKEND_URL}/api/tiles?startX=${startX}&endX=${endX}&startY=${startY}&endY=${endY}`)
+        .then(res => res.json())
+        .then(data => {
+          if (Array.isArray(data)) {
+            useStore.getState().setTiles(data);
+          }
+        })
+        .catch(console.error);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [offset, scale]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -266,15 +330,29 @@ export default function Map() {
       {/* Bottom Right Minimap and Controls */}
       <div className="absolute bottom-6 right-6 flex flex-col items-end z-20">
         
-        {/* Fake Minimap Box */}
-        <div className="w-32 h-32 border border-[#414751] bg-[#101415]/80 mb-3 relative shadow-xl overflow-hidden">
+        {/* Interactive Minimap */}
+        <div 
+          ref={minimapRef}
+          onPointerDown={onMinimapPointerDown}
+          onPointerMove={onMinimapPointerMove}
+          className="w-32 h-32 border border-[#414751] bg-[#101415]/80 mb-3 relative shadow-xl overflow-hidden cursor-crosshair touch-none"
+        >
           <div className="absolute inset-0 bg-[#264191]/5 opacity-50" />
-          {/* Faint minimap grid/tiles representation */}
-          <div className="absolute top-4 left-4 w-4 h-4 bg-[#60a5fa]/40 border border-[#60a5fa]" />
-          <div className="absolute top-6 left-5 w-4 h-4 bg-[#60a5fa]/20 border border-[#60a5fa]" />
-          <div className="absolute bottom-6 right-6 w-8 h-8 border border-[#414751]" />
-          {/* Hatched lines in minimap just for aesthetic */}
-          <div className="absolute bottom-6 right-6 w-8 h-8 opacity-20" style={{ backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 2px, #fff 2px, #fff 4px)' }} />
+          
+          {/* Viewport Box */}
+          <div 
+            className="absolute border border-[#60a5fa] bg-[#60a5fa]/20 pointer-events-none"
+            style={{
+              left: Math.max(0, (-offset.x / scale / (GRID_SIZE * TILE_SIZE)) * 128),
+              top: Math.max(0, (-offset.y / scale / (GRID_SIZE * TILE_SIZE)) * 128),
+              width: Math.min(128, (viewportSize.w / scale / (GRID_SIZE * TILE_SIZE)) * 128),
+              height: Math.min(128, (viewportSize.h / scale / (GRID_SIZE * TILE_SIZE)) * 128)
+            }}
+          />
+          
+          {/* Aesthetic overlays */}
+          <div className="absolute bottom-6 right-6 w-8 h-8 border border-[#414751] pointer-events-none" />
+          <div className="absolute bottom-6 right-6 w-8 h-8 opacity-20 pointer-events-none" style={{ backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 2px, #fff 2px, #fff 4px)' }} />
         </div>
 
         {/* Zoom Controls */}
