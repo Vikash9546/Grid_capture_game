@@ -1,20 +1,27 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
-import { socket } from '../socket';
+import { connectSocket } from '../socket';
 import { BACKEND_URL } from '../config';
 
 export default function Login({ onLogin }) {
+  const [isLoginMode, setIsLoginMode] = useState(true);
   const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  
   const [color, setColor] = useState('blue');
   const [customColor, setCustomColor] = useState('#a855f7');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isAvailable, setIsAvailable] = useState(true);
   const [isChecking, setIsChecking] = useState(false);
+  
   const setUser = useStore((state) => state.setUser);
+  const setToken = useStore((state) => state.setToken);
 
   useEffect(() => {
-    if (!username.trim() || username.length < 3) {
+    // Only check username availability if registering
+    if (isLoginMode || !username.trim() || username.length < 3) {
       setIsAvailable(true);
       setError('');
       return;
@@ -36,10 +43,10 @@ export default function Login({ onLogin }) {
       } finally {
         setIsChecking(false);
       }
-    }, 500); // 500ms debounce
+    }, 500);
 
     return () => clearTimeout(timeoutId);
-  }, [username]);
+  }, [username, isLoginMode]);
 
   const colors = [
     { id: 'blue', hex: '#60a5fa', bg: '#60a5fa', border: '#60a5fa', icon: 'check', fill: 1, iconColor: '#003a6b', opacity: '100' },
@@ -52,32 +59,38 @@ export default function Login({ onLogin }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!username.trim() || !isAvailable || isChecking) return;
+    if (!isLoginMode && (!isAvailable || isChecking)) return;
     
     setIsLoading(true);
+    setError('');
 
     try {
-      const loginRes = await fetch(`${BACKEND_URL}/api/auth/login`, {
+      const endpoint = isLoginMode ? '/api/auth/login' : '/api/auth/register';
+      const payload = isLoginMode 
+        ? { email, password } 
+        : { email, username, password, color: activeTheme.hex };
+
+      const loginRes = await fetch(`${BACKEND_URL}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, color: activeTheme.hex })
+        body: JSON.stringify(payload)
       });
       const loginData = await loginRes.json();
       
-      if (!loginData.user) {
-        throw new Error('Login failed');
+      if (!loginRes.ok) {
+        throw new Error(loginData.error || 'Authentication failed');
       }
 
       const sessionUser = loginData.user;
 
-      socket.connect();
-      socket.emit('join_world', { userId: sessionUser.id });
-      
+      setToken(loginData.token);
       setUser(sessionUser);
+      connectSocket();
       localStorage.setItem('territory_user', JSON.stringify(sessionUser));
+      localStorage.setItem('territory_token', loginData.token);
       onLogin();
     } catch (err) {
-      setError('CONNECTION_FAILED');
+      setError(err.message.toUpperCase());
     } finally {
       setIsLoading(false);
     }
@@ -86,8 +99,8 @@ export default function Login({ onLogin }) {
   const handleGuestLogin = (e) => {
     e.preventDefault();
     const guestUser = { id: 'guest', username: 'GUEST_OBSERVER', color: '#8b919d', isGuest: true };
-    socket.connect();
     setUser(guestUser);
+    connectSocket();
     localStorage.setItem('territory_user', JSON.stringify(guestUser));
     onLogin();
   };
@@ -97,12 +110,10 @@ export default function Login({ onLogin }) {
       
       {/* Background Layer */}
       <div className="fixed inset-0 z-0">
-        {/* World Map Wireframe / Schematic */}
         <div 
           className="absolute inset-0 opacity-20 filter grayscale contrast-150" 
           style={{ backgroundImage: "url('https://lh3.googleusercontent.com/aida-public/AB6AXuBkJqSNRTC99NrSHnZH7HLUq5STtMenn57yLBz5j8T4cMnAJeLW0IziHMO_eWcW3ujvHQhXEztiwb57zP9J4tyVjAVuzQTI6GD6BJmp0ip4_bMFFm49UcsPsOoTFdbMZXHALg1rwllhcK4WYfOHC_sfFghv792IMnUtdU6aU1Va48jyXoqyLyfQ2sYB8AgXDK0CMkfw-bb0-LU6XQFGuMZglAzeb35qaJ--EpHnHk5ZyK6bFx-GTLKVE_jeWAj4XuoVBtvzIXe1ujs')" }}
         />
-        {/* Grid & Scanline */}
         <div className="absolute inset-0 grid-overlay" />
         <div className="scanline" />
       </div>
@@ -119,116 +130,172 @@ export default function Login({ onLogin }) {
         {/* Authentication Card */}
         <div className="w-full bg-[#191c1e] border border-[#264191] p-10 relative group">
           
-          {/* Decorative Corners */}
           <div className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-[#60a5fa] -translate-x-1 -translate-y-1" />
           <div className="absolute top-0 right-0 w-4 h-4 border-t-2 border-r-2 border-[#60a5fa] translate-x-1 -translate-y-1" />
           <div className="absolute bottom-0 left-0 w-4 h-4 border-b-2 border-l-2 border-[#60a5fa] -translate-x-1 translate-y-1" />
           <div className="absolute bottom-0 right-0 w-4 h-4 border-b-2 border-r-2 border-[#60a5fa] translate-x-1 translate-y-1" />
 
           <div className="mb-8">
-            <h2 className="text-[24px] leading-[1.3] font-semibold text-[#e0e3e5] mb-2 tracking-tight">COMMANDER AUTHENTICATION</h2>
-            <p className="font-mono text-[12px] leading-[1.2] tracking-[0.05em] text-[#c1c7d3] uppercase opacity-80">Establish a secure link to the tactical network.</p>
+            <h2 className="text-[24px] leading-[1.3] font-semibold text-[#e0e3e5] mb-2 tracking-tight">
+              {isLoginMode ? 'COMMANDER LOGIN' : 'COMMANDER REGISTRATION'}
+            </h2>
+            <p className="font-mono text-[12px] leading-[1.2] tracking-[0.05em] text-[#c1c7d3] uppercase opacity-80">
+              {isLoginMode ? 'Establish a secure link to the tactical network.' : 'Register your callsign and faction.'}
+            </p>
           </div>
 
-          <form className="space-y-8" onSubmit={handleSubmit}>
-            {/* Username Input */}
+          <form className="space-y-6" onSubmit={handleSubmit}>
+            {/* Email Input */}
             <div className="space-y-2">
-              <label className="font-mono text-[10px] leading-[1] tracking-[0.1em] font-bold text-[#60a5fa] block">CALLSIGN_ID</label>
+              <label className="font-mono text-[10px] leading-[1] tracking-[0.1em] font-bold text-[#60a5fa] block">
+                {isLoginMode ? 'EMAIL_OR_CALLSIGN' : 'EMAIL_ADDRESS'}
+              </label>
               <div className="relative group">
                 <input 
                   className="w-full bg-[#272a2c] border border-[#414751]/40 px-4 py-3 font-mono text-[16px] leading-[1.2] font-medium text-[#e0e3e5] focus:outline-none focus:border-[#60a5fa] focus:bg-[#264191]/10 transition-all placeholder:text-[#414751]/60" 
-                  placeholder="ENTER_IDENTIFIER..." 
+                  placeholder={isLoginMode ? "ENTER_IDENTIFIER..." : "ENTER_EMAIL..."}
                   type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value.toUpperCase())}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
                 />
                 <div className="absolute right-3 top-1/2 -translate-y-1/2 opacity-40 text-[#e0e3e5]">
-                  <span className="material-symbols-outlined text-[20px]">fingerprint</span>
+                  <span className="material-symbols-outlined text-[20px]">mail</span>
                 </div>
               </div>
-              {error && <p className="font-mono text-[10px] text-[#ffb4ab] uppercase tracking-widest mt-1">{error}</p>}
             </div>
 
-            {/* Color Picker (Faction) */}
-            <div className="space-y-4">
-              <label className="font-mono text-[10px] leading-[1] tracking-[0.1em] font-bold text-[#60a5fa] block">FACTION_COLOR</label>
-              <div className="flex flex-wrap gap-4">
-                {colors.map((c) => {
-                  const isActive = color === c.id;
-                  return (
-                    <button 
-                      key={c.id}
-                      type="button"
-                      onClick={() => setColor(c.id)}
-                      className={`faction-chip w-10 h-10 border-2 flex items-center justify-center transition-all ring-offset-2 ring-offset-[#101415] hover:scale-110 active:scale-95 ${isActive ? 'ring-2 ring-[#60a5fa]' : ''} group/btn`}
-                      style={{ 
-                        backgroundColor: isActive && c.id !== 'blue' ? c.hex + '66' : c.bg, // Hack to make active background opaqueish
-                        borderColor: isActive ? c.hex : c.border 
-                      }}
-                    >
-                      <span 
-                        className={`material-symbols-outlined text-[18px] ${!isActive ? 'opacity-0 group-hover/btn:opacity-100' : ''}`}
-                        style={{ 
-                          color: isActive ? (c.id === 'blue' ? '#003a6b' : c.hex) : c.iconColor,
-                          fontVariationSettings: `'FILL' ${isActive ? 1 : 0}` 
-                        }}
-                      >
-                        {isActive ? 'check' : 'token'}
-                      </span>
-                    </button>
-                  );
-                })}
-
-                {/* Custom Color Picker */}
-                <div className="relative group/btn">
+            {/* Username Input (Only for Register) */}
+            {!isLoginMode && (
+              <div className="space-y-2">
+                <label className="font-mono text-[10px] leading-[1] tracking-[0.1em] font-bold text-[#60a5fa] block">CALLSIGN_ID</label>
+                <div className="relative group">
                   <input 
-                    type="color"
-                    value={colors.find(c => c.id === color) ? customColor : color}
-                    onChange={(e) => {
-                      setCustomColor(e.target.value);
-                      setColor(e.target.value);
-                    }}
-                    className="opacity-0 absolute inset-0 w-full h-full cursor-pointer z-10"
-                    title="Custom Faction Color"
+                    className="w-full bg-[#272a2c] border border-[#414751]/40 px-4 py-3 font-mono text-[16px] leading-[1.2] font-medium text-[#e0e3e5] focus:outline-none focus:border-[#60a5fa] focus:bg-[#264191]/10 transition-all placeholder:text-[#414751]/60" 
+                    placeholder="ENTER_IDENTIFIER..." 
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value.toUpperCase())}
+                    required
                   />
-                  <div 
-                    className={`faction-chip w-10 h-10 border-2 flex items-center justify-center transition-all ring-offset-2 ring-offset-[#101415] hover:scale-110 active:scale-95 ${!colors.find(c => c.id === color) ? 'ring-2 ring-[#60a5fa]' : ''}`}
-                    style={{ 
-                      backgroundColor: !colors.find(c => c.id === color) ? color + '66' : 'rgba(255,255,255,0.05)',
-                      borderColor: !colors.find(c => c.id === color) ? color : 'rgba(255,255,255,0.2)'
-                    }}
-                  >
-                    <span 
-                      className={`material-symbols-outlined text-[18px] ${colors.find(c => c.id === color) ? 'opacity-60 group-hover/btn:opacity-100' : ''}`}
-                      style={{ 
-                        color: !colors.find(c => c.id === color) ? color : '#fff',
-                        fontVariationSettings: `'FILL' ${!colors.find(c => c.id === color) ? 1 : 0}` 
-                      }}
-                    >
-                      {!colors.find(c => c.id === color) ? 'check' : 'palette'}
-                    </span>
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 opacity-40 text-[#e0e3e5]">
+                    <span className="material-symbols-outlined text-[20px]">fingerprint</span>
                   </div>
                 </div>
               </div>
+            )}
+
+            {/* Password Input */}
+            <div className="space-y-2">
+              <label className="font-mono text-[10px] leading-[1] tracking-[0.1em] font-bold text-[#60a5fa] block">PASSPHRASE</label>
+              <div className="relative group">
+                <input 
+                  className="w-full bg-[#272a2c] border border-[#414751]/40 px-4 py-3 font-mono text-[16px] leading-[1.2] font-medium text-[#e0e3e5] focus:outline-none focus:border-[#60a5fa] focus:bg-[#264191]/10 transition-all placeholder:text-[#414751]/60" 
+                  placeholder="ENTER_PASSPHRASE..." 
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 opacity-40 text-[#e0e3e5]">
+                  <span className="material-symbols-outlined text-[20px]">lock</span>
+                </div>
+              </div>
             </div>
+
+            {error && <p className="font-mono text-[10px] text-[#ffb4ab] uppercase tracking-widest mt-1">{error}</p>}
+
+            {/* Color Picker (Only for Register) */}
+            {!isLoginMode && (
+              <div className="space-y-4 pt-2">
+                <label className="font-mono text-[10px] leading-[1] tracking-[0.1em] font-bold text-[#60a5fa] block">FACTION_COLOR</label>
+                <div className="flex flex-wrap gap-4">
+                  {colors.map((c) => {
+                    const isActive = color === c.id;
+                    return (
+                      <button 
+                        key={c.id}
+                        type="button"
+                        onClick={() => setColor(c.id)}
+                        className={`faction-chip w-10 h-10 border-2 flex items-center justify-center transition-all ring-offset-2 ring-offset-[#101415] hover:scale-110 active:scale-95 ${isActive ? 'ring-2 ring-[#60a5fa]' : ''} group/btn`}
+                        style={{ 
+                          backgroundColor: isActive && c.id !== 'blue' ? c.hex + '66' : c.bg,
+                          borderColor: isActive ? c.hex : c.border 
+                        }}
+                      >
+                        <span 
+                          className={`material-symbols-outlined text-[18px] ${!isActive ? 'opacity-0 group-hover/btn:opacity-100' : ''}`}
+                          style={{ 
+                            color: isActive ? (c.id === 'blue' ? '#003a6b' : c.hex) : c.iconColor,
+                            fontVariationSettings: `'FILL' ${isActive ? 1 : 0}` 
+                          }}
+                        >
+                          {isActive ? 'check' : 'token'}
+                        </span>
+                      </button>
+                    );
+                  })}
+                  <div className="relative group/btn">
+                    <input 
+                      type="color"
+                      value={colors.find(c => c.id === color) ? customColor : color}
+                      onChange={(e) => {
+                        setCustomColor(e.target.value);
+                        setColor(e.target.value);
+                      }}
+                      className="opacity-0 absolute inset-0 w-full h-full cursor-pointer z-10"
+                      title="Custom Faction Color"
+                    />
+                    <div 
+                      className={`faction-chip w-10 h-10 border-2 flex items-center justify-center transition-all ring-offset-2 ring-offset-[#101415] hover:scale-110 active:scale-95 ${!colors.find(c => c.id === color) ? 'ring-2 ring-[#60a5fa]' : ''}`}
+                      style={{ 
+                        backgroundColor: !colors.find(c => c.id === color) ? color + '66' : 'rgba(255,255,255,0.05)',
+                        borderColor: !colors.find(c => c.id === color) ? color : 'rgba(255,255,255,0.2)'
+                      }}
+                    >
+                      <span 
+                        className={`material-symbols-outlined text-[18px] ${colors.find(c => c.id === color) ? 'opacity-60 group-hover/btn:opacity-100' : ''}`}
+                        style={{ 
+                          color: !colors.find(c => c.id === color) ? color : '#fff',
+                          fontVariationSettings: `'FILL' ${!colors.find(c => c.id === color) ? 1 : 0}` 
+                        }}
+                      >
+                        {!colors.find(c => c.id === color) ? 'check' : 'palette'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* CTA Section */}
             <div className="pt-4 flex flex-col gap-4">
               <button 
                 type="submit"
-                disabled={isLoading || !username || username.length < 3 || !isAvailable || isChecking}
+                disabled={isLoading || (!isLoginMode && (!isAvailable || isChecking))}
                 className="w-full bg-[#60a5fa] text-[#003a6b] font-mono text-[10px] leading-[1] tracking-[0.1em] font-bold py-4 flex items-center justify-center gap-3 hover:bg-[#d4e3ff] transition-colors active:scale-[0.98] duration-100 group disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isLoading ? 'INITIALIZING...' : isChecking ? 'VERIFYING...' : 'INITIALIZE UPLINK'}
+                {isLoading ? 'INITIALIZING...' : isChecking ? 'VERIFYING...' : isLoginMode ? 'INITIALIZE UPLINK' : 'REGISTER COMMANDER'}
                 <span className="material-symbols-outlined text-[18px] group-hover:translate-x-1 transition-transform">login</span>
               </button>
-              <button 
-                type="button" 
-                onClick={handleGuestLogin}
-                className="font-mono text-[10px] leading-[1] tracking-[0.1em] font-bold text-[#c1c7d3] text-center hover:text-[#60a5fa] transition-colors pt-2"
-              >
-                GUEST_VIEW_ONLY
-              </button>
+              
+              <div className="flex justify-between items-center px-2">
+                <button 
+                  type="button" 
+                  onClick={() => setIsLoginMode(!isLoginMode)}
+                  className="font-mono text-[10px] leading-[1] tracking-[0.1em] font-bold text-[#60a5fa] hover:text-[#d4e3ff] transition-colors"
+                >
+                  {isLoginMode ? 'CREATE NEW ALLIANCE' : 'RETURNING COMMANDER?'}
+                </button>
+
+                <button 
+                  type="button" 
+                  onClick={handleGuestLogin}
+                  className="font-mono text-[10px] leading-[1] tracking-[0.1em] font-bold text-[#c1c7d3] hover:text-[#60a5fa] transition-colors"
+                >
+                  GUEST_VIEW_ONLY
+                </button>
+              </div>
             </div>
           </form>
 

@@ -1,6 +1,6 @@
 import React from 'react';
 import { useStore } from './store/useStore';
-import { socket } from './socket';
+import { socket, connectSocket } from './socket';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import Map from './components/Map';
@@ -19,20 +19,14 @@ function App() {
         const sessionUser = JSON.parse(stored);
         if (!sessionUser.id) throw new Error('Legacy session without ID');
         
-        socket.connect();
-        socket.emit('join_world', { userId: sessionUser.id });
         setUser(sessionUser);
+        connectSocket();
       } catch (e) {
         localStorage.removeItem('territory_user');
       }
     }
 
     if (user) {
-      fetch(`${BACKEND_URL}/api/tiles`)
-        .then(res => res.json())
-        .then(data => setTiles(data))
-        .catch(console.error);
-        
       fetch(`${BACKEND_URL}/api/leaderboard`)
         .then(res => res.json())
         .then(data => setLeaderboard(data))
