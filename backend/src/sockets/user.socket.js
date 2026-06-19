@@ -6,16 +6,20 @@ export const setupUserSockets = (io, socket) => {
   const trackConnection = async () => {
     if (socket.userId === 'guest') {
       const onlineCount = await redisClient.keys('online:*').then(keys => keys.length);
-      io.emit('user_online', { count: onlineCount });
+      socket.emit('user_online', { count: onlineCount });
       return;
     }
     
     // Increment reference count for tracking multiple tabs
     const count = await redisClient.incr(`online:${socket.userId}`);
+    const onlineCount = await redisClient.keys('online:*').then(keys => keys.length);
+
+    // Always tell the newly connected user how many people are online
+    socket.emit('user_online', { count: onlineCount });
+
     if (count === 1) {
-      // Broadcast online count only when a new unique user connects
-      const onlineCount = await redisClient.keys('online:*').then(keys => keys.length);
-      io.emit('user_online', { count: onlineCount });
+      // Broadcast to everyone else only if it's a new unique user
+      socket.broadcast.emit('user_online', { count: onlineCount });
     }
   };
 
