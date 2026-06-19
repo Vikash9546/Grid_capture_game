@@ -7,7 +7,7 @@ const TILE_SIZE = 30;
 
 export default function Map() {
   const canvasRef = useRef(null);
-  const { tiles, user, updateTile, addLog } = useStore();
+  const { tiles, user, updateTile, addLog, logs } = useStore();
   const [offset, setOffset] = useState({ x: -TILE_SIZE * 20, y: -TILE_SIZE * 20 });
   const [scale, setScale] = useState(1);
   const [isDragging, setIsDragging] = useState(false);
