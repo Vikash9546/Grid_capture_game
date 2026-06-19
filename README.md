@@ -7,7 +7,7 @@ Players authenticate into the Commander dashboard and are dropped into a shared,
 
 ---
 
-## 🏛 System Architecture & Design
+## System Architecture & Design
 
 The V2 system is built on a highly concurrent, horizontally scalable architecture utilizing Node.js, Socket.io, PostgreSQL, and Redis. It enforces a strict Controller-Service-Repository pattern for enterprise maintainability.
 
@@ -51,7 +51,7 @@ flowchart TD
 
 ---
 
-## 🗄 Entity Relationship (ER) Diagram
+## Entity Relationship (ER) Diagram
 
 The persistent data model relies on a highly normalized PostgreSQL relational database. 
 
@@ -93,7 +93,7 @@ erDiagram
 
 ---
 
-## 🚀 Data Flow & Engineering Trade-offs
+## Data Flow & Engineering Trade-offs
 
 To guarantee absolute data integrity under massive concurrent load (e.g., 50 players clicking the exact same tile simultaneously) while maintaining extreme performance, several critical architectural implementations were built.
 
@@ -116,7 +116,7 @@ The system uses `bcryptjs` for cryptographic password hashing and signs stateles
 
 ---
 
-## 💻 Tech Stack
+## Tech Stack
 - **Frontend:** React, Vite, TailwindCSS, Zustand, HTML5 Canvas API
 - **Backend:** Node.js, Express, Socket.io, JWT, bcrypt
 - **Database:** PostgreSQL (Prisma ORM)
